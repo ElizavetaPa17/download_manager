@@ -2,6 +2,7 @@
 #include <array>
 
 #include "utility.h"
+#include <QDebug>
 
 #define LOG_FILENAME "log.txt"
 
@@ -15,9 +16,19 @@ ManagerClient::~ManagerClient() {
 }
 
 bool ManagerClient::connect(const std::string &url) {
+    reset_state();
+
+    std::vector<std::string> url_comp = Utility::resolve_url_components(url);
+    if (url_comp.size() != 2) {
+        file_logger_.write_msg(std::string("Invalid url get: ") + url, true);
+        return false;
+    }
+
+    qDebug() << url_comp;
+
     boost::system::error_code ec;
     boost::asio::ip::tcp::resolver resolv(io_context_);
-    auto endpoints = resolv.resolve(url, "80", ec);
+    auto endpoints = resolv.resolve(url_comp[0], "80", ec);
 
     if (ec) {
         file_logger_.write_msg(std::string("Invalid url get: ") + url, true);
@@ -34,12 +45,20 @@ bool ManagerClient::connect(const std::string &url) {
             return false;
         } else {
             file_logger_.write_msg("Successfull connection", true);
-            return true;
         }
+
+        //get_connection_info();
+        //qDebug() << is_accept_ranges_;
+        //qDebug() << content_length_;
+        return true;
     }
 }
 
-bool ManagerClient::check_ranges_existance() {
+void ManagerClient::start_downloading() {
+
+}
+
+void ManagerClient::get_connection_info() {
     static std::string head_request = "HEAD / HTTP/1.1\n"
                                       "Host: example.com\n"
                                       "User-Agent: curl/7.81.0\n"
@@ -56,9 +75,13 @@ bool ManagerClient::check_ranges_existance() {
         throw std::runtime_error("failed to send http-request");
     }
 
-    while (true) {
+    while (!is_accept_ranges_ && content_length_ < 0) {
         size_t len = socket_.read_some(boost::asio::buffer(buffer_), ec);
         if (ec == boost::asio::error::eof) {
+            if (!is_accept_ranges_) {
+                file_logger_.write_msg("Accept-ranges is not available", true);
+            }
+
             break;
         } else if (ec) {
             file_logger_.write_msg("Failed to check ranges-request existance while reading. Close socket", true);
@@ -68,14 +91,28 @@ bool ManagerClient::check_ranges_existance() {
 
         if (Utility::sstrstr(buffer_.data(), "Accept-Ranges: bytes", len)) {
             file_logger_.write_msg("Accept-ranges is available", true);
-            return true;
-        } else {
-            file_logger_.write_msg("Accept-ranges is not available", true);
-            return false;
+            is_accept_ranges_ = true;
+        }
+
+        // check this area
+        char* cont_len_ptr = nullptr, *new_line_ptr = nullptr;
+        if (cont_len_ptr = Utility::sstrstr(buffer_.data(), "Content-Length: ", len)) {
+            cont_len_ptr += sizeof("Content-Length: ")-1;
+            char new_line = '\n';
+            new_line_ptr = strstr(cont_len_ptr, &new_line);
+
+            *new_line_ptr = 0;
+            content_length_ = std::atoi(cont_len_ptr);
+            *new_line_ptr = '\n';
         }
     }
 
-    return false;
+}
+
+void ManagerClient::reset_state() {
+    is_accept_ranges_ = false;
+    content_length_ = -1;
+    close_socket();
 }
 
 void ManagerClient::close_socket() {
@@ -84,46 +121,3 @@ void ManagerClient::close_socket() {
         socket_.close();
     }
 }
-
-    //    std::array<char, 4096> buf;
-     //   strcpy(buf.data(), "HEAD / HTTP/1.1\n"
-      //                     "Host: example.com\n"
-       //                    "User-Agent: curl/7.81.0\n"
-         //                  "Accept: */*\n\n");
-/*
-
-        boost::asio::write(socket_, boost::asio::buffer(buf), ec);
-        if (ec) {
-            std::cerr << "Failed to send HTTP-request.\n";
-            socket_.close();
-            return false;
-        }
-
-        while (true) {
-            size_t len = socket_.read_some(boost::asio::buffer(buf), ec);
-            if (ec == boost::asio::error::eof) {
-                break;
-            } else if (ec) {
-                std::cerr << "Finish to read\n";
-                socket_.close();
-                return false;
-            }
-            
-            if (Utility::sstrstr(buf.data(), "Accept-Ranges: bytes", len)) {
-                std::cerr << "\nWas found!\n";
-                socket_.close();
-                return true;
-            } else {
-                std::cerr << "\nNOT FOUND\n";
-                socket_.close();
-                return false;
-            }
-
-            std::cout.write(buf.data(), len);
-        }
-        
-        socket_.close();
-        return true;
-    }
-}
-*/
