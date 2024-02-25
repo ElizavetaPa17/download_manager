@@ -5,9 +5,6 @@
 
 #define LOG_FILENAME "log.txt"
 
-
-// CREATE_COMMIT!!!
-
 ManagerClient::ManagerClient() 
     : io_context_(), socket_(io_context_), file_logger_(LOG_FILENAME)
 {

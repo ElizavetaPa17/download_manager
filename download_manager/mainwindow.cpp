@@ -30,7 +30,10 @@ void MainWindow::on_addButton_clicked()
                                  "Your URL is invalid. Check it and try again.", "Ok");
         } else {
             QString filename = QFileDialog::getSaveFileName(nullptr, "Choose File to store");
-            qDebug() << filename;
+            if (filename.isEmpty()) {
+                return;
+            }
+
         }
     }
 }
