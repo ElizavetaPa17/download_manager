@@ -3,6 +3,7 @@
 
 #include "utility.h"
 #include <QDebug>
+#include <QStringView>
 
 #define LOG_FILENAME "log.txt"
 
@@ -18,17 +19,11 @@ ManagerClient::~ManagerClient() {
 bool ManagerClient::connect(const std::string &url) {
     reset_state();
 
-    std::vector<std::string> url_comp = Utility::resolve_url_components(url);
-    if (url_comp.size() != 2) {
-        file_logger_.write_msg(std::string("Invalid url get: ") + url, true);
-        return false;
-    }
-
-    qDebug() << url_comp;
+    url_comp_ = Utility::resolve_url_components(url);
 
     boost::system::error_code ec;
     boost::asio::ip::tcp::resolver resolv(io_context_);
-    auto endpoints = resolv.resolve(url_comp[0], "80", ec);
+    auto endpoints = resolv.resolve(url_comp_[0], "80", ec);
 
     if (ec) {
         file_logger_.write_msg(std::string("Invalid url get: ") + url, true);
@@ -46,26 +41,36 @@ bool ManagerClient::connect(const std::string &url) {
         } else {
             file_logger_.write_msg("Successfull connection", true);
         }
-
-        //get_connection_info();
-        //qDebug() << is_accept_ranges_;
-        //qDebug() << content_length_;
         return true;
     }
 }
 
-void ManagerClient::start_downloading() {
-
-}
-
-void ManagerClient::get_connection_info() {
-    static std::string head_request = "HEAD / HTTP/1.1\n"
-                                      "Host: example.com\n"
-                                      "User-Agent: curl/7.81.0\n"
-                                      "Accept: */*\n\n";
+void ManagerClient::start_downloading(const std::string& filename) {
     if (!socket_.is_open()) {
         throw std::logic_error("client socket is closed");
     }
+
+    get_connection_info();
+    if (is_accept_ranges_) {
+        // TODO
+        // accept_parted_content();
+        download_content(filename);
+    } else {
+        download_content(filename);
+    }
+
+    //qDebug() << "is accept_range: " << is_accept_ranges_ << "content_length: " << content_length_;
+}
+
+// https://libeldoc.bsuir.by/bitstream/123456789/34863/1/Kalugina_2019.pdf
+
+void ManagerClient::get_connection_info() {
+    std::string head_request(QString("HEAD /%1 HTTP/1.1\n"
+                                     "Host: example.com\n"
+                                     "User-Agent: curl/7.81.0\n"
+                                     "Accept: */*\n\n").arg(QStringView(QString(url_comp_[1].c_str()))).toStdString());
+
+    //qDebug() << head_request;
 
     boost::system::error_code ec;
     boost::asio::write(socket_, boost::asio::buffer(head_request), ec);
@@ -75,11 +80,11 @@ void ManagerClient::get_connection_info() {
         throw std::runtime_error("failed to send http-request");
     }
 
-    while (!is_accept_ranges_ && content_length_ < 0) {
+    while (content_length_ == -1) {
         size_t len = socket_.read_some(boost::asio::buffer(buffer_), ec);
         if (ec == boost::asio::error::eof) {
             if (!is_accept_ranges_) {
-                file_logger_.write_msg("Accept-ranges is not available", true);
+                file_logger_.write_msg("Accept-ranges is not available", false);
             }
 
             break;
@@ -106,7 +111,12 @@ void ManagerClient::get_connection_info() {
             *new_line_ptr = '\n';
         }
     }
+}
 
+void ManagerClient::download_content(const std::string& filename) {
+    auto file_strm_ptr = Utility::open_file_for_writing(filename);
+    *file_strm_ptr << "here\n";
+    qDebug() << "was written";
 }
 
 void ManagerClient::reset_state() {

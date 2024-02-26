@@ -34,6 +34,7 @@ void MainWindow::on_addButton_clicked()
                 return;
             }
 
+            manager_client_.start_downloading(filename.toStdString());
         }
     }
 }
