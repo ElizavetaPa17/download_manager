@@ -46,9 +46,9 @@ std::vector<std::string> Utility::resolve_url_components(const std::string &url)
     return components;
 }
 
-std::unique_ptr<std::ofstream> Utility::open_file_for_writing(const std::string& filename) {
-    std::unique_ptr<std::ofstream> file_strm_ptr = std::make_unique<std::ofstream>(filename, std::ios::out);
-    if (!file_strm_ptr->is_open()) {
+std::ofstream Utility::open_file_for_writing(const std::string& filename) {
+    std::ofstream file_strm_ptr(filename, std::ios::out);
+    if (!file_strm_ptr.is_open()) {
         throw std::runtime_error("cannot open " + filename);
     }
 

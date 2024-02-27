@@ -38,4 +38,3 @@ void MainWindow::on_addButton_clicked()
         }
     }
 }
-

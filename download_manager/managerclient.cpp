@@ -2,6 +2,8 @@
 #include <array>
 
 #include "utility.h"
+
+#include <boost/bind.hpp>
 #include <QDebug>
 #include <QStringView>
 
@@ -65,12 +67,12 @@ void ManagerClient::start_downloading(const std::string& filename) {
 // https://libeldoc.bsuir.by/bitstream/123456789/34863/1/Kalugina_2019.pdf
 
 void ManagerClient::get_connection_info() {
-    std::string head_request(QString("HEAD /%1 HTTP/1.1\n"
-                                     "Host: example.com\n"
+    std::string head_request(QString("HEAD /%2 HTTP/1.1\n"
+                                     "Host: %1\n"
                                      "User-Agent: curl/7.81.0\n"
-                                     "Accept: */*\n\n").arg(QStringView(QString(url_comp_[1].c_str()))).toStdString());
-
-    //qDebug() << head_request;
+                                     "Accept: */*\n\n")
+                                     .arg(QStringView(QString(url_comp_[0].c_str())))
+                                     .arg(QStringView(QString(url_comp_[1].c_str()))).toStdString());
 
     boost::system::error_code ec;
     boost::asio::write(socket_, boost::asio::buffer(head_request), ec);
@@ -113,12 +115,6 @@ void ManagerClient::get_connection_info() {
     }
 }
 
-void ManagerClient::download_content(const std::string& filename) {
-    auto file_strm_ptr = Utility::open_file_for_writing(filename);
-    *file_strm_ptr << "here\n";
-    qDebug() << "was written";
-}
-
 void ManagerClient::reset_state() {
     is_accept_ranges_ = false;
     content_length_ = -1;
@@ -130,4 +126,57 @@ void ManagerClient::close_socket() {
         socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
         socket_.close();
     }
+}
+
+void ManagerClient::download_content(const std::string& filename) {
+    file_strm_ptr_ = Utility::open_file_for_writing(filename);
+    send_initial_get_request();
+    read();
+}
+
+void ManagerClient::send_initial_get_request() {
+    std::string get_request(QString("GET /%2 HTTP/1.1\n"
+                                    "Host: %1\n"
+                                    "User-Agent: curl/7.81.0\n"
+                                    "Accept: */*\n\n")
+                                    .arg(QString(url_comp_[0].c_str()))
+                                    .arg(QString(url_comp_[1].c_str())).toStdString());
+
+    boost::system::error_code ec;
+    boost::asio::write(socket_, boost::asio::buffer(get_request), ec);
+    if (ec) {
+        file_logger_.write_msg("Failed to send initial get-request. Close socket", true);
+        close_socket();
+        throw std::runtime_error("failed to send http-request");
+    }
+}
+
+void ManagerClient::read() {
+    boost::asio::async_read(socket_,
+                            boost::asio::buffer(buffer_),
+                            boost::asio::transfer_at_least(1),
+                            boost::bind(&ManagerClient::read_handler, this, _1, _2));
+
+    // refactoring
+    std::thread t([&]() {
+        try {
+            io_context_.run();
+        } catch(std::exception const &ex) {
+            qDebug() << ex.what();
+        } catch (...) {
+
+        }
+    });
+
+    t.detach();
+}
+
+void ManagerClient::read_handler(const boost::system::error_code &ec, std::size_t bytes_read) {
+    if (ec) {
+        file_logger_.write_msg("Fatal error while downloading file", true);
+        file_logger_.write_msg(ec.message(), false);
+        throw std::runtime_error(ec.message());
+    }
+
+    qDebug() << buffer_.data();
 }
